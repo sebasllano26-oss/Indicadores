@@ -13,13 +13,20 @@ def test_live_ui_views_filters_and_mobile_layout(request):
         browser = p.chromium.launch(headless=True)
         page = browser.new_page(viewport={'width': 1440, 'height': 1000})
         errors = []
+        resource_errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
+        page.on('response', lambda response: resource_errors.append(response.url)
+                if response.status >= 400 and response.request.resource_type in ('font', 'stylesheet', 'script') else None)
         response = page.goto('http://127.0.0.1:8000', wait_until='domcontentloaded')
         assert response.status == 200
         expect(page.locator('#source_status')).to_contain_text('Conectado', timeout=45000)
         expect(page.get_by_role('heading', name='Análisis estratégico', exact=True)).to_be_visible()
         expect(page.locator('.metric-value').first).not_to_have_text('0')
         page.locator('.js-plotly-plot').first.wait_for(timeout=20000)
+        page.locator('#secondary_chart .js-line').first.wait_for(timeout=20000)
+        page.evaluate('document.fonts.ready')
+        assert page.evaluate("document.fonts.check('14px Inter')")
+        assert not resource_errors, resource_errors
         page.screenshot(path=str(screenshots / 'desktop.png'), full_page=True)
         for route, title in [
             ('indicadores', 'Indicadores estratégicos'), ('alertas', 'Alertas tempranas'),
@@ -36,10 +43,17 @@ def test_live_ui_views_filters_and_mobile_layout(request):
             if route == 'registros':
                 expect(page.locator('#record_id')).to_be_visible()
                 expect(page.locator('#record_detail h3')).not_to_be_empty(timeout=10000)
+                page.locator('#column_filters').check()
+                expect(page.locator('#main_table table.filtering')).to_be_visible()
+                page.locator('#column_filters').uncheck()
+                page.locator('.filter-disclosure > summary').click()
                 page.locator('#search').fill('zz-no-existe-zz')
                 expect(page.locator('#view_notice')).to_contain_text('No hay datos para esta consulta', timeout=10000)
+                expect(page.locator('#filter_caption')).to_contain_text('1 activo')
                 page.locator('#clear_filters').click()
                 expect(page.locator('#record_detail h3')).not_to_be_empty(timeout=10000)
+                expect(page.locator('#filter_caption')).to_contain_text('Sin filtros adicionales')
+                page.locator('.filter-disclosure > summary').click()
             if route == 'contratacion':
                 expect(page.locator('.checklist-table tbody tr')).to_have_count(24)
                 page.screenshot(path=str(screenshots / 'contratos.png'), full_page=True)
@@ -64,7 +78,23 @@ def test_live_ui_views_filters_and_mobile_layout(request):
         expect(mobile.get_by_role('heading', name='Análisis estratégico', exact=True)).to_be_visible()
         expect(mobile.locator('.metric-value').first).not_to_have_text('0')
         mobile.locator('.js-plotly-plot').first.wait_for(timeout=20000)
+        mobile.locator('#secondary_chart').scroll_into_view_if_needed()
+        mobile.locator('#secondary_chart .js-line').first.wait_for(timeout=20000)
+        mobile.evaluate('document.fonts.ready')
+        mobile.evaluate('window.scrollTo(0,0)')
         mobile.screenshot(path=str(screenshots / 'mobile.png'), full_page=True)
         assert mobile.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1')
+        mobile.locator('.collapse-toggle').click()
+        expect(mobile.locator('.sidebar label:has(input[value="indicadores"])')).to_be_visible()
+        mobile.locator('.sidebar label:has(input[value="indicadores"])').click()
+        mobile.locator('.collapse-toggle').click()
+        expect(mobile.get_by_role('heading', name='Indicadores estratégicos', exact=True)).to_be_visible()
+        expect(mobile.locator('.indicator-card')).to_have_count(4)
+        assert mobile.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1')
+        mobile.emulate_media(reduced_motion='reduce')
+        mobile.locator('.collapse-toggle').click()
+        expect(mobile.locator('.sidebar label:has(input[value="analisis"])')).to_be_visible()
+        mobile.locator('.collapse-toggle').click()
+        expect(mobile.locator('.sidebar label:has(input[value="analisis"])')).not_to_be_visible()
         assert not errors, errors
         browser.close()

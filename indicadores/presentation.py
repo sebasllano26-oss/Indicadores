@@ -6,6 +6,7 @@ from shiny import ui
 
 from .domain import BAND_LABELS, Period, alerts, analysis_summary, contract_progress, evaluate_all, filter_records, values_list
 from .normalization import parse_date, text
+from .icons import icon
 
 VIEW_LABELS = {
     'analisis': 'Análisis estratégico', 'indicadores': 'Indicadores estratégicos',
@@ -34,6 +35,12 @@ def number(value, decimals=0):
 
 def money(value):
     return '$ ' + number(value) if value is not None else 'Sin dato'
+
+
+def compact_money(value):
+    if value is None:
+        return 'Sin dato'
+    return '$ ' + number(value / 1_000_000, 1) + ' M' if abs(value) >= 1_000_000 else money(value)
 
 
 def percent(value):
@@ -124,9 +131,12 @@ def badge(label, tone='neutral'):
     return ui.tags.span(label, class_=f'badge-status {tone}')
 
 
-def metric(label, value, detail='', tone=''):
-    return ui.tags.div(ui.tags.div(label, class_='metric-label'), ui.tags.div(value, class_='metric-value'),
-                       ui.tags.div(detail, class_='metric-detail'), class_=f'metric-card {tone}')
+def metric(label, value, detail='', tone='', symbol='analisis'):
+    return ui.tags.div(
+        ui.tags.div(ui.tags.span(label, class_='metric-label'),
+                    ui.tags.span(icon(symbol), class_='metric-icon'), class_='metric-top'),
+        ui.tags.div(value, class_='metric-value'),
+        ui.tags.div(detail, class_='metric-detail'), class_=f'metric-card {tone}')
 
 
 def section_header(title, detail=''):
@@ -134,11 +144,12 @@ def section_header(title, detail=''):
 
 
 def note(message, tone='info'):
-    return ui.tags.div(message, class_=f'notice {tone}', role='status')
+    return ui.tags.div(icon('info', 17), ui.tags.div(message), class_=f'notice {tone}', role='status')
 
 
 def empty_state(title, detail, link=None):
-    return ui.tags.div(ui.tags.h3(title), ui.tags.p(detail), link, class_='empty-state')
+    return ui.tags.div(ui.tags.span(icon('registros', 24), class_='empty-icon'),
+                       ui.tags.h3(title), ui.tags.p(detail), link, class_='empty-state')
 
 
 def field_list(row, fields):

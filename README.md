@@ -2,6 +2,8 @@
 
 Portal de relacionamiento estratégico de Comfamiliar Risaralda. El equipo captura los datos en [Google Sheets](https://docs.google.com/spreadsheets/d/1vSevS3HEHGnGEc4q3Gjd4874iQJqySkN1hnWFVKssaU/edit); Python calcula los resultados y Shiny actualiza las vistas. Los cambios en la hoja no requieren publicar nuevamente el código.
 
+La interfaz usa navegación por secciones, filtros desplegables, un resumen de cuatro cifras y gráficos interactivos. Las cifras monetarias del resumen se abrevian en millones (`M`); debajo se conserva el importe completo en COP. Las tablas permiten ordenar columnas, habilitar sus filtros y descargar el CSV. El diseño se adapta a móvil con un menú desplegable. La fuente Inter y los iconos se sirven desde la app; la licencia de Inter está incluida en `www/fonts/OFL.txt`.
+
 ## Ejecutar en Windows
 
 Requiere Python 3.12. Desde esta carpeta:

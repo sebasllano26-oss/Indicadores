@@ -1,6 +1,7 @@
 import asyncio
 from dataclasses import replace
 from datetime import datetime
+from textwrap import shorten
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -11,10 +12,11 @@ from indicadores.config import APP_DIR, Settings
 from indicadores.copilot import answer_question
 from indicadores.domain import CHECKLIST, Period, alerts, analysis_summary, contract_progress, distribution, evaluate_all, filter_records
 from indicadores.models import BOGOTA, Snapshot
+from indicadores.icons import icon
 from indicadores.normalization import text
 from indicadores.presentation import (
     CONFIG_LABELS, VIEW_LABELS, VIEW_TABLE, badge, empty_state, field_list, metric,
-    money, note, number, operational_rows, percent, safe_link, section_header, table_for_view,
+    compact_money, money, note, number, operational_rows, percent, safe_link, section_header, table_for_view,
 )
 from indicadores.repository import SheetRepository
 
@@ -27,44 +29,68 @@ PERIOD_CHOICES = {'ANUAL': 'Año completo', **{f'T{i}': f'Trimestre {i}' for i i
                   **{f'M{i}': name for i, name in enumerate(('Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
                      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'), 1)}}
 
+VIEW_DESCRIPTIONS = {
+    'analisis': 'Una mirada integral a la gestión y los recursos de tu equipo.',
+    'indicadores': 'Resultados, metas y avances de los objetivos estratégicos.',
+    'alertas': 'Identifica los pendientes que requieren atención de tu equipo.',
+    'registros': 'La trazabilidad de cada iniciativa, en un solo lugar.',
+    'contratacion': 'Acompaña cada contrato, desde el inicio hasta su cierre.',
+    'radar': 'Oportunidades para conectar proyectos con nuevas posibilidades.',
+    'cierres': 'Consulta los resultados guardados de cada período.',
+    'configuracion': 'Objetivos, metas y parámetros que dan forma a la gestión.',
+}
+NAV_LABELS = dict(zip(VIEW_LABELS, ('Análisis', 'Indicadores', 'Alertas tempranas', 'Registros',
+                                  'Contratación', 'Radar de convocatorias', 'Cierres y auditoría', 'Configuración')))
+
 app_ui = ui.page_sidebar(
     ui.sidebar(
-        ui.tags.div(ui.tags.img(src='logo.jpg', alt='Comfamiliar Risaralda', class_='brand-logo'), class_='brand'),
-        ui.tags.div('RELACIONAMIENTO', class_='sidebar-eyebrow'),
-        ui.tags.h1('Gestión estratégica', class_='sidebar-title'),
-        ui.input_radio_buttons('view', None, VIEW_LABELS, selected='analisis'),
+        ui.tags.div(ui.tags.img(src='logo.jpg', alt='Comfamiliar Risaralda', class_='brand-logo'),
+                    ui.tags.div(ui.tags.strong('Comfamiliar'), ui.tags.span('RISARALDA')), class_='brand'),
+        ui.tags.div(ui.tags.h1('Relacionamiento'), ui.tags.p('Gestión estratégica'), class_='product-name'),
+        ui.input_radio_buttons('view', 'Navegación',
+            {key: ui.tags.span(icon(key), ui.tags.span(NAV_LABELS[key], title=label), class_='nav-label') for key, label in VIEW_LABELS.items()},
+            selected='analisis'),
         ui.tags.div(
-            ui.input_select('year', 'Año de consulta', {str(YEAR): str(YEAR)}, selected=str(YEAR)),
-            ui.input_select('period', 'Período', PERIOD_CHOICES, selected='ANUAL'),
-            class_='sidebar-period',
+            ui.tags.div(icon('sheet', 20), ui.tags.div(ui.tags.strong('Tu fuente de información'), ui.tags.span('Google Sheets compartida')), class_='source-card'),
+            ui.tags.a('Gestionar datos', icon('arrow', 15), href=settings.sheet_url(), target='_blank', rel='noopener noreferrer'),
+            class_='sidebar-bottom',
         ),
-        ui.tags.div('Los datos se registran en la hoja compartida.', class_='sidebar-note'),
-        width=270, open='desktop', id='navigation',
+        width=248, open='desktop', id='navigation', resizable=False,
     ),
-    ui.include_css(APP_DIR / 'www' / 'app.css'),
+    ui.tags.link(rel='stylesheet', href='app.css'),
     ui.tags.a('Ir al contenido', href='#main-content', class_='skip-link'),
     ui.tags.main(
         ui.tags.div(
-            ui.tags.div(ui.tags.span('COMFAMILIAR RISARALDA', class_='eyebrow'), ui.tags.p('Portal de relacionamiento estratégico', class_='portal-name')),
+            ui.tags.div(ui.tags.span('RELACIONAMIENTO ESTRATÉGICO', class_='eyebrow'),
+                        ui.tags.span('Portal de gestión', class_='portal-name'), class_='topbar-context'),
             ui.tags.div(
-                ui.input_action_button('open_copilot', 'Copiloto', class_='btn-outline-primary'),
-                ui.tags.a('Abrir Google Sheets', href=settings.sheet_url(), target='_blank', rel='noopener noreferrer', class_='action-link'),
-                ui.input_action_button('refresh', 'Actualizar', class_='btn-primary'), class_='header-actions',
+                ui.input_action_button('open_copilot', ui.TagList(icon('sparkles', 17), 'Copiloto'), class_='btn-quiet'),
+                ui.tags.a(icon('sheet', 16), 'Google Sheets', href=settings.sheet_url(), target='_blank', rel='noopener noreferrer', class_='action-link'),
+                ui.input_action_button('refresh', ui.TagList(icon('refresh', 16), 'Actualizar'), class_='btn-primary'), class_='header-actions',
             ), class_='topbar',
         ),
-        ui.output_ui('source_status'),
         ui.tags.div(
-            ui.input_select('area', 'Área beneficiaria', {'': 'Todas las áreas'}),
-            ui.input_select('responsible', 'Responsable', {'': 'Todos los responsables'}),
-            ui.input_select('state', 'Estado de gestión', {'': 'Todos los estados'}),
-            ui.input_select('objective', 'Objetivo estratégico', {'': 'Todos los objetivos'}),
-            ui.input_text('search', 'Buscar', placeholder='Proyecto, entidad o palabra clave'),
-            ui.input_action_button('clear_filters', 'Limpiar filtros', class_='btn-outline-secondary'),
-            class_='filter-panel',
+            ui.tags.div(ui.output_ui('page_heading'),
+                ui.tags.div(ui.input_select('year', 'Año', {str(YEAR): str(YEAR)}, selected=str(YEAR)),
+                            ui.input_select('period', 'Período', PERIOD_CHOICES, selected='ANUAL'), class_='period-controls'),
+                class_='heading-row'),
+            ui.output_ui('source_status'),
+            ui.tags.details(
+                ui.tags.summary(ui.tags.span(icon('filter', 16), 'Filtros de consulta', class_='filter-title'),
+                                ui.output_ui('filter_caption', inline=True), ui.tags.span('⌄', class_='filter-chevron')),
+                ui.tags.div(
+                    ui.input_select('area', 'Área beneficiaria', {'': 'Todas las áreas'}),
+                    ui.input_select('responsible', 'Responsable', {'': 'Todos los responsables'}),
+                    ui.input_select('state', 'Estado de gestión', {'': 'Todos los estados'}),
+                    ui.input_select('objective', 'Objetivo estratégico', {'': 'Todos los objetivos'}),
+                    ui.input_text('search', 'Buscar', placeholder='Proyecto o palabra clave'),
+                    ui.input_action_button('clear_filters', 'Limpiar filtros', class_='btn-quiet'), class_='filter-panel'),
+                class_='filter-disclosure'),
+            ui.output_ui('view_body'),
+            ui.tags.footer(ui.tags.span('Comfamiliar Risaralda'), ui.tags.span('Relacionamiento estratégico'), class_='app-footer'),
+            class_='workspace',
         ),
-        ui.output_ui('view_body'),
-        ui.tags.footer('Relacionamiento Estratégico · Comfamiliar Risaralda', class_='app-footer'),
-        id='main-content', class_='workspace',
+        id='main-content',
     ),
     title=None, window_title='Relacionamiento Estratégico · Comfamiliar Risaralda', lang='es',
 )
@@ -101,7 +127,7 @@ def server(input, output, session):
             await asyncio.to_thread(repository.refresh, True)
             refresh_signal.set(refresh_signal.get() + 1)
         finally:
-            ui.update_action_button('refresh', label='Actualizar', disabled=False)
+            ui.update_action_button('refresh', label=ui.TagList(icon('refresh', 16), 'Actualizar'), disabled=False)
 
     @reactive.calc
     def selected_period():
@@ -163,31 +189,45 @@ def server(input, output, session):
             alert_ids.set(None)
 
     @render.ui
+    def page_heading():
+        view = input.view()
+        return section_header(VIEW_LABELS[view], VIEW_DESCRIPTIONS[view])
+
+    @render.ui
+    def filter_caption():
+        count = sum(bool(value) for value in filters().values())
+        return ui.tags.span(f'{count} activo' if count == 1 else f'{count} activos' if count else 'Sin filtros adicionales', class_='filter-caption active' if count else 'filter-caption')
+
+    @render.ui
     def source_status():
         current = state.get()
         if current.snapshot is None:
             return note(current.error or 'Conectando con Google Sheets…', 'warning' if current.error else 'info')
-        stamp = current.snapshot.loaded_at.strftime('%d/%m/%Y %H:%M:%S')
+        stamp = current.snapshot.loaded_at.strftime('%d/%m/%Y · %H:%M:%S')
         if current.error:
             return note(f'No se pudo actualizar: {current.error} Última lectura válida: {stamp}.', 'warning')
         source_name = 'Archivo local' if settings.source_mode == 'file' else 'Google Sheets'
-        return ui.tags.div(badge('Conectado', 'success'), ui.tags.span(source_name),
-                           ui.tags.span(f'Última lectura: {stamp}', class_='sync-time'),
-                           ui.tags.span(f'Consulta cada {settings.refresh_seconds} s', class_='muted'), class_='sync-bar')
+        return ui.tags.div(ui.tags.span(ui.tags.i(class_='status-dot'), 'Conectado', class_='connection-label'),
+                           ui.tags.span(source_name, class_='source-name'),
+                           ui.tags.span(icon('clock', 13), f'Actualizado {stamp}', class_='sync-time'),
+                           ui.tags.span(f'Cada {settings.refresh_seconds} s', class_='sync-interval'), class_='sync-bar')
 
     def grid_panel(title='Detalle de la consulta'):
-        return ui.card(ui.card_header(ui.tags.span(title), ui.download_button('download_csv', 'Descargar CSV', class_='btn-sm btn-outline-secondary')),
+        return ui.card(ui.card_header(ui.tags.span(title),
+                       ui.tags.div(ui.input_switch('column_filters', 'Filtrar columnas', False),
+                           ui.download_button('download_csv', ui.TagList(icon('download', 15), 'Descargar CSV'), class_='btn-sm btn-quiet'), class_='table-tools')),
                        ui.output_data_frame('main_table'), class_='table-card')
 
     @render.ui
     def view_body():
         view = input.view()
-        headings = section_header(VIEW_LABELS[view])
-        common = [headings, ui.output_ui('view_notice')]
+        common = [ui.output_ui('view_notice')]
         if view == 'analisis':
-            return ui.TagList(*common, ui.output_ui('metrics'),
-                ui.tags.div(ui.card(ui.card_header('Gestiones por área'), output_widget('primary_chart')),
-                            ui.card(ui.card_header('Evolución mensual'), output_widget('secondary_chart')), class_='chart-grid'), grid_panel('Detalle por área'))
+            return ui.TagList(ui.output_ui('metrics'), *common,
+                ui.tags.div(ui.card(ui.card_header(ui.tags.div(ui.tags.h3('Dónde se concentra la gestión'), ui.tags.p('Las 8 áreas con más gestiones')), icon('analisis')),
+                                    output_widget('primary_chart')),
+                            ui.card(ui.card_header(ui.tags.div(ui.tags.h3('El ritmo de la gestión'), ui.tags.p('Registros iniciados en cada mes')), icon('indicadores')),
+                                    output_widget('secondary_chart')), class_='chart-grid'), grid_panel('Detalle por área'))
         if view == 'indicadores':
             return ui.TagList(*common, ui.output_ui('indicator_cards'), ui.output_ui('indicator_controls'),
                               ui.card(ui.card_header('Serie del indicador'), output_widget('secondary_chart')), grid_panel('Resultados por objetivo'))
@@ -219,7 +259,7 @@ def server(input, output, session):
         source, period, view = snapshot(), selected_period(), input.view()
         if data.get() is None:
             return note('La consulta se mostrará cuando termine la lectura de la hoja.')
-        notices = [ui.tags.div(period.label, class_='period-caption')]
+        notices = []
         table = VIEW_TABLE.get(view, optional_input('config_section', 'objetivos_area'))
         if view not in ('alertas',) and table not in source.tables:
             notices.append(note(f'Falta la pestaña {table} en la fuente.', 'warning'))
@@ -230,7 +270,9 @@ def server(input, output, session):
         if view in ('analisis', 'indicadores', 'registros'):
             unclassified = analysis_summary(records())['sin_clasificar']
             if unclassified:
-                notices.append(note(f'{unclassified} registros de esta consulta no tienen objetivo asignado. Complete su clasificación en Sheets.', 'warning'))
+                notices.append(note(ui.TagList(ui.tags.strong(f'{unclassified} registros por clasificar.'),
+                    ' Asigna un objetivo para completar la lectura estratégica. ',
+                    safe_link(settings.sheet_url('registros'), 'Completar en Sheets')), 'warning'))
         if view in ('contratacion', 'radar'):
             notices.append(ui.tags.p('Estas secciones usan el año, responsable y búsqueda. Los registros sin fecha permanecen visibles.', class_='muted'))
         if view == 'registros' and alert_ids.get() is not None:
@@ -247,7 +289,7 @@ def server(input, output, session):
         if view == 'contratacion':
             rows = operational_rows(source.rows('contratos'), period, filters(), 'fecha_inicio')
             total = sum(r.get('cuantia') or 0 for r in rows)
-            blocks = [metric('Contratos', number(len(rows))), metric('Cuantía registrada', money(total), 'COP'),
+            blocks = [metric('Contratos', number(len(rows)), symbol='contratacion'), metric('Cuantía registrada', compact_money(total), money(total) + ' COP', symbol='wallet'),
                       metric('Fases cumplidas', number(sum(contract_progress(r)['cumplidos'] for r in rows))),
                       metric('Fases sin registrar', number(sum(contract_progress(r)['sin_registrar'] for r in rows)), tone='attention')]
         elif view == 'radar':
@@ -262,16 +304,18 @@ def server(input, output, session):
                       metric('Advertencias', number(sum(a['nivel'] == 'ADVERTENCIA' for a in current))),
                       metric('Información', number(sum(a['nivel'] == 'INFORMACION' for a in current)))]
         else:
-            blocks = [metric('Gestiones registradas', number(summary['total']), period.label),
-                      metric('Recursos solicitados', money(summary['gestionados']), 'COP'),
-                      metric('Recursos asignados', money(summary['asignados']), 'COP'),
-                      metric('Gestiones finalizadas', number(summary['finalizados']), f"{summary['en_avance']} en avance")]
+            blocks = [metric('Gestiones registradas', number(summary['total']), period.label, symbol='registros'),
+                      metric('Recursos solicitados', compact_money(summary['gestionados']), money(summary['gestionados']) + ' COP', symbol='wallet'),
+                      metric('Recursos asignados', compact_money(summary['asignados']), money(summary['asignados']) + ' COP', symbol='coins'),
+                      metric('Gestiones finalizadas', number(summary['finalizados']), f"{summary['en_avance']} gestiones en avance", symbol='check')]
         return ui.tags.div(*blocks, class_='metric-grid')
 
     @render.data_frame
     def main_table():
         current = table_for_view(input.view(), snapshot(), selected_period(), filters(), optional_input('config_section', 'objetivos_area'))
-        return render.DataGrid(current, filters=True, width='100%', height='440px', summary='{start}–{end} de {total} filas')
+        return render.DataTable(current, filters=bool(optional_input('column_filters', False)), width='100%',
+                                height='auto' if len(current) <= 8 else '460px', summary='{start}–{end} de {total} filas',
+                                styles={'style': {'fontSize': '12px', 'padding': '13px 14px', 'color': '#66758d'}})
 
     @render.download(filename=lambda: f'relacionamiento_{input.view()}_{input.year()}.csv')
     def download_csv():
@@ -279,24 +323,33 @@ def server(input, output, session):
         yield '\ufeff' + current.to_csv(index=False)
 
     def chart_layout(figure, x_title='', y_title='Registros'):
-        figure.update_layout(template='plotly_white', height=310, margin=dict(l=20, r=20, t=30, b=45),
-                             font=dict(family='Arial, sans-serif', color='#24324b'),
+        figure.update_layout(template='plotly_white', height=285, margin=dict(l=25, r=20, t=28, b=35),
+                             font=dict(family='Inter, sans-serif', color='#95a1b7', size=10),
                              paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                             xaxis_title=x_title, yaxis_title=y_title, legend=dict(orientation='h', y=1.12))
+                             xaxis_title='', yaxis_title='', legend=dict(orientation='h', y=1.14, font=dict(size=9)),
+                             hoverlabel=dict(bgcolor='#172a60', font=dict(color='#fff', family='Inter', size=11)),
+                             modebar=dict(remove=['zoom', 'pan', 'select', 'lasso', 'zoomIn', 'zoomOut', 'autoScale']))
+        figure.update_xaxes(showgrid=False, zeroline=False, showline=False, ticks='', tickfont=dict(size=10))
+        figure.update_yaxes(gridcolor='#eff2f8', zeroline=False, showline=False, ticks='', tickfont=dict(size=10), nticks=5)
         return figure
 
     @render_plotly
     def primary_chart():
         counts = distribution(records(), 'area_beneficiaria')
-        selected = sorted(counts.items(), key=lambda x: x[1])[-10:]
+        selected = sorted(counts.items(), key=lambda x: x[1])[-8:]
         figure = go.Figure()
         if selected:
-            figure.add_bar(x=[c for _, c in selected], y=[a for a, _ in selected], orientation='h',
-                           marker_color='#294894', text=[c for _, c in selected], textposition='outside',
-                           hovertemplate='%{y}: %{x} registros<extra></extra>')
+            figure.add_bar(x=[c for _, c in selected], y=[shorten(a, width=28, placeholder='…') for a, _ in selected], orientation='h',
+                           marker_color=['#cbd7ee'] * (len(selected) - 1) + ['#344f9a'],
+                           width=.48, text=[c for _, c in selected], textposition='outside', textfont=dict(color='#72819d', size=10),
+                           customdata=[a for a, _ in selected], cliponaxis=False,
+                           hovertemplate='%{customdata}<br>%{x} registros<extra></extra>')
             chart_layout(figure, 'Registros', '')
-            figure.update_layout(margin=dict(l=20, r=35, t=20, b=40))
-            figure.update_yaxes(automargin=True)
+            figure.update_layout(margin=dict(l=10, r=35, t=15, b=12), bargap=.45)
+            labels = [shorten(a, width=28, placeholder='…') for a, _ in selected]
+            figure.update_yaxes(automargin=True, showgrid=False, tickmode='array', tickvals=labels, ticktext=labels,
+                                tickfont=dict(size=11, color='#697a96'))
+            figure.update_xaxes(visible=False, range=[0, max(c for _, c in selected) * 1.12])
         else:
             figure.add_annotation(text='No hay registros para los filtros seleccionados', showarrow=False)
             chart_layout(figure)
@@ -310,11 +363,16 @@ def server(input, output, session):
             current = next((r for r in evaluated if r['id_indicador'] == optional_input('indicator_id')), evaluated[0] if evaluated else None)
             if current:
                 series = current['serie']
-                figure.add_bar(name='Resultado', x=[r['periodo'] for r in series], y=[r['valor'] for r in series], marker_color='#294894')
+                figure.add_bar(name='Resultado', x=[r['periodo'] for r in series], y=[r['valor'] for r in series], marker_color='#5877bb', width=.35)
                 if any(r['meta'] is not None for r in series):
                     figure.add_scatter(name='Meta', x=[r['periodo'] for r in series], y=[r['meta'] for r in series],
-                                       mode='lines+markers', line=dict(color='#9e8500', dash='dot'))
+                                       mode='lines+markers', line=dict(color='#c5a958', dash='dot', width=2))
                 chart_layout(figure, 'Período', 'Proporción' if current['modo'] in ('RAZON', 'BASE') else 'Resultado')
+                if not any(r['valor'] for r in series) and not any(r['meta'] for r in series):
+                    figure.add_annotation(text='Sin actividad clasificada para este indicador',
+                        x=.5, y=.5, xref='paper', yref='paper', showarrow=False, font=dict(size=12, color='#8593ac'))
+                    figure.update_xaxes(visible=False)
+                    figure.update_yaxes(visible=False)
             else:
                 figure.add_annotation(text='No hay indicadores configurados', showarrow=False)
                 chart_layout(figure)
@@ -322,8 +380,9 @@ def server(input, output, session):
             source = filter_records(snapshot().rows('registros'), Period(selected_period().year), filters())
             values = [len(filter_records(source, Period(selected_period().year, 'MENSUAL', month))) for month in range(1, 13)]
             figure.add_scatter(x=['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'],
-                               y=values, mode='lines+markers', fill='tozeroy', line=dict(color='#294894', width=3),
-                               fillcolor='rgba(41,72,148,.08)', hovertemplate='%{x}: %{y} registros<extra></extra>')
+                               y=values, mode='lines+markers', fill='tozeroy', line=dict(color='#5777bd', width=2.5),
+                               marker=dict(size=5, color='#fff', line=dict(color='#5777bd', width=1.8)),
+                               fillcolor='rgba(87,119,189,.055)', hovertemplate='%{x}<br>%{y} registros<extra></extra>')
             chart_layout(figure, 'Mes de inicio')
         return figure
 
@@ -335,11 +394,15 @@ def server(input, output, session):
             state_label = row['error'] or row['etiquetaBanda']
             tone = 'warning' if row['sinMeta'] or row['sinBase'] or row['error'] else 'success' if row['banda'] in ('CUMPLIDA', 'SOBRECUMPLIDA') else 'warning'
             value = percent(row['valor']) if row['modo'] in ('BASE', 'RAZON') else number(row['valor'])
-            cards.append(ui.tags.div(ui.tags.div(ui.tags.span(row['periodo'], class_='eyebrow'), badge(state_label, tone), class_='indicator-top'),
+            target = percent(row['meta']) if row['modo'] in ('BASE', 'RAZON') else number(row['meta'])
+            progress = min(100, max(0, (row['cumplimiento'] or 0) * 100))
+            cards.append(ui.tags.div(ui.tags.div(ui.tags.span((row['codigo'] or 'INDICADOR') + ' / ' + row['periodo'], class_='eyebrow'), badge(state_label, tone), class_='indicator-top'),
                 ui.tags.h3(text(row['nombre'])), ui.tags.p(text(row['formula']), class_='muted'),
-                ui.tags.div(ui.tags.div(value, class_='indicator-value'), ui.tags.span('Resultado registrado', class_='muted')),
-                ui.tags.div(ui.tags.span('Meta: ' + (percent(row['meta']) if row['modo'] in ('BASE', 'RAZON') else number(row['meta']))),
-                            ui.tags.span('Cumplimiento: ' + percent(row['cumplimiento'])), class_='indicator-footer'), class_='indicator-card'))
+                ui.tags.div(ui.tags.div(ui.tags.div(value, class_='indicator-value'), ui.tags.span('Resultado registrado', class_='indicator-value-label')),
+                            ui.tags.div(ui.tags.strong(target), ui.tags.span('Meta del período', class_='indicator-value-label'), class_='indicator-target'), class_='indicator-result'),
+                ui.tags.div(ui.tags.span('Cumplimiento del objetivo'), ui.tags.strong(percent(row['cumplimiento'])), class_='indicator-footer'),
+                ui.tags.div(ui.tags.span(style=f'width:{progress}%'), class_='indicator-track pending' if row['cumplimiento'] is None else 'indicator-track'),
+                class_='indicator-card'))
         return ui.tags.div(*cards, class_='indicator-grid') if cards else empty_state('Sin indicadores', 'Configure los indicadores en la hoja.')
 
     @render.ui
