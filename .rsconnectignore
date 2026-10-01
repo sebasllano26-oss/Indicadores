@@ -1,0 +1,17 @@
+.git
+.venv
+.env
+.env.example
+__pycache__
+indicadores/__pycache__
+.pytest_cache
+tests
+test-results
+requirements-dev.txt
+iniciar.ps1
+docs
+service-account*.json
+credentials*.json
+token*.json
+*.xlsx
+*.csv

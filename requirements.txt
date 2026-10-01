@@ -1,0 +1,10 @@
+shiny==1.8.0
+shinywidgets==0.8.1
+pandas==3.0.6
+plotly==6.9.0
+openpyxl==3.1.5
+requests==2.34.2
+google-auth==2.59.1
+google-genai==2.26.0
+python-dotenv==1.2.4
+tzdata==2026.4
